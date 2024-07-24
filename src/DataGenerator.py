@@ -1,3 +1,17 @@
+import keras
+import numpy as np
+import random
+from imgaug import augmenters as iaa
+from sklearn.utils import shuffle
+
+
+def get_match_key(y):
+    key = y.astype(str)
+    key = "".join(key).zfill(6)
+
+    return key
+
+
 class DataGenerator(keras.utils.Sequence):
     def __init__(self, x, label, x_real, label_real_dict, batch_size=32, shuffle=True):
         "Initialization"
@@ -48,8 +62,7 @@ class DataGenerator(keras.utils.Sequence):
         # pick matched images(label 1.0) and unmatched images(label 0.0) and put together in batch
         # matched images must be all same, [subject_id(3), gender(1), left_right(1), finger(1)], e.g) 034010
         for i, l in enumerate(label_batch):
-            match_key = l.astype(str)
-            match_key = "".join(match_key).zfill(6)
+            match_key = get_match_key(l)
 
             if random.random() > 0.5:
                 # put matched image
