@@ -10,10 +10,13 @@ from util import (
     extract_label,
     combine_label,
     format_image_prediction,
+    resize_and_pad_image,
 )
 import os
 import tensorflow as tf
 import traceback
+import matplotlib.pyplot as plt
+import fingerprint_enhancer
 
 PORT = 8000
 
@@ -39,8 +42,19 @@ def init_database():
     for i, path in enumerate(fingerprint_paths):
         filename = path.stem
         img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        # img = fingerprint_enhancer.enhance_Fingerprint(img)
+        # img = cv2.bitwise_not(img)
         img = Gabor(img)
+        # img = cv2.resize(img, (90, 90))
         img = format_image_prediction(img)
+
+        # img = cv2.resize(img, (103, 96))
+        # img = fingerprint_enhancer.enhance_Fingerprint(img)
+        # img = cv2.bitwise_not(img)
+        # img = resize_and_pad_image(img, (90, 90))
+        # img[img > 150] = 255
+        # img[img < 150] = 0
+
         label = extract_label(filename)
         fingerprint_database.append((label, img))
         current_id = max(current_id, label[0])
@@ -85,10 +99,47 @@ def compare_fingerprint(fingerprint1, fingerprint2, label2):
     return round(np.max(pred), 5), label2
 
 
+def test(img):
+    plt.figure(figsize=(16, 8))
+    plt.subplot(2, 1, 1)
+    plt.title("Input: ")
+    plt.imshow(img.squeeze(), cmap="gray")
+    img = cv2.resize(img, (2 * 96, 2 * 103))
+    if np.mean(img) > 200:
+        img = cv2.equalizeHist(img)
+    img = cv2.resize(img, (2 * 96, 2 * 103))
+    img = fingerprint_enhancer.enhance_Fingerprint(img)
+    img = cv2.bitwise_not(img)
+    img = resize_and_pad_image(img, (90, 90))
+
+    # plt.figure(figsize=(16, 8))
+    # plt.subplot(2, 1, 1)
+    # plt.title("Input: ")
+    # plt.imshow(img.squeeze(), cmap="gray")
+    img[img > 200] = 255
+    img[img < 100] = 0
+    plt.subplot(2, 1, 2)
+    plt.imshow(img.squeeze(), cmap="gray")
+    plt.waitforbuttonpress()
+
+
 def find_fingerprint(data):
     img = base64_to_image(data["fingerprint"])
-    img = Gabor(img)
-    img = format_image_prediction(img)
+    test(img)
+    # img = Gabor(img)
+    # img = format_image_prediction(img)
+    # img = fingerprint_enhancer.enhance_Fingerprint(img)
+    # img = cv2.bitwise_not(img)
+    # img = resize_and_pad_image(img, (90, 90))
+    # img[img > 150] = 255
+    # img[img < 150] = 0
+    # # img = cv2.resize(img, (90, 90))
+    # img = format_image_prediction(img)
+
+    plt.figure(figsize=(16, 8))
+    plt.title("Input: ")
+    plt.imshow(img.squeeze(), cmap="gray")
+    plt.waitforbuttonpress()
 
     best_score = 0
     id_match = 0
@@ -105,6 +156,7 @@ def find_fingerprint(data):
             "score": 0,
             "label": "Unknown",
         }
+
     return {
         "id": int(id_match),
         "score": int(best_score * 10**5),
