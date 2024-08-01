@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import base64
 import pathlib
+import fingerprint_enhancer
 
 
 def resolve(*args):
@@ -122,5 +123,10 @@ def Gabor(img):
 
     avg_out = avg_out / len(gabor_bank)
     avg_out = avg_out.astype(np.uint8)
+    # avg_out = cv2.equalizeHist(avg_out)
+    # avg_out[avg_out < 130] = 0
+    # avg_out[avg_out > 130] = 255
     avg_out = resize_and_pad_image(avg_out, target_size=target_train_size)
+    # avg_out[avg_out < 130] = 0
+    # avg_out[avg_out > 130] = 255
     return avg_out
