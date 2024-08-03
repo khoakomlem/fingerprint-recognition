@@ -37,7 +37,6 @@ def generate_gabor_bank(
 
 
 def Gabor(img):
-    img = cv2.resize(img, (7 * 96, 7 * 103))
     gabor_bank = generate_gabor_bank(num_kernels=16)
     avg_out = np.zeros(img.shape)
 
@@ -47,17 +46,17 @@ def Gabor(img):
 
     avg_out = avg_out / len(gabor_bank)
     avg_out = avg_out.astype(np.uint8)
-    avg_out = cv2.resize(avg_out, (90, 90))
     return avg_out
 
 
 def process_image(img_path, index):
     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if np.mean(img) > 170:
+    if np.mean(img) > 200:
         img = cv2.equalizeHist(img)
-    img = cv2.resize(img, (2 * 96, 2 * 103))
-    img = fingerprint_enhancer.enhance_Fingerprint(img)
-    img = cv2.bitwise_not(img)
+        img = cv2.resize(img, (20 * 96, 20 * 103))
+        img = fingerprint_enhancer.enhance_Fingerprint(img)
+        img = cv2.bitwise_not(img)
+
     img = resize_and_pad_image(img, (90, 90))
     img[img > 200] = 255
     img[img < 100] = 0
@@ -91,32 +90,46 @@ for dataset in DATASET:
     plt.figure(figsize=(16, 8))
     for i in range(4):
         plt.subplot(1, 4, i + 1)
-        plt.imshow(data[i][0], cmap="gray")
-        plt.title(data[i][1])
-        # plt.axis("off")
-    plt.suptitle(f"Dataset: {dataset}")
+        plt.imshow(data[i + 100][0], cmap="gray")
+        plt.title(data[i + 100][1])
+        plt.axis("off")
+        plt.suptitle(f"Dataset: {dataset}")
     plt.show()
 input("Press Enter to continue...")
 exit()
 
 
-for dataset in DATASET:
-    # real_len = 50
-    real_len = len(paths_dict[dataset])
-    print(
-        f'Generating dataset-original "{dataset}" with {real_len}/{len(paths_dict[dataset])} images'
-    )
-    thread_pool.reset(real_len)
+# for dataset in DATASET:
+#     # real_len = 50
+#     real_len = len(paths_dict[dataset])
+#     print(
+#         f'Generating dataset-original "{dataset}" with {real_len}/{len(paths_dict[dataset])} images'
+#     )
+#     thread_pool.reset(real_len)
 
-    for index, img_path in enumerate(paths_dict[dataset][:real_len]):
-        thread_pool.add_task(process_image, img_path, index)
+#     for index, img_path in enumerate(paths_dict[dataset][:real_len]):
+#         thread_pool.add_task(process_image, img_path, index)
 
-    thread_pool.wait_completion()
+#     thread_pool.wait_completion()
 
-    for result in list(thread_pool.results.queue):
-        img, label, index = result
-        result_dict[dataset].append(np.array([img, label], dtype=object))
+#     for result in list(thread_pool.results.queue):
+#         img, label, index = result
+#         result_dict[dataset].append(np.array([img, label], dtype=object))
 
-    os.makedirs(f"{DATASET_DIR}/{dataset}", exist_ok=True)
-    np.savez_compressed(f"{DATASET_DIR}/{dataset}/data.npz", result_dict[dataset])
-    print(f"Saved dataset-enhanced/{dataset}/data.npz")
+#     os.makedirs(f"{DATASET_DIR}/{dataset}", exist_ok=True)
+#     np.savez_compressed(f"{DATASET_DIR}/{dataset}/data.npz", result_dict[dataset])
+#     print(f"Saved dataset-enhanced/{dataset}/data.npz")
+
+target = [
+    "319__M_Left_index_finger",
+    "31__F_Right_ring_finger",
+    "303__F_Left_ring_finger",
+    "253__F_Left_little_finger",
+    "16__M_Left_little_finger",
+    "303__F_Left_middle_finger",
+]
+for index, t in enumerate(target):
+    path = os.path.join(f"{DATASET_RAW_DIR}/", "Real", f"{t}.BMP")
+    img, label, i = process_image(path, 0)
+    result_dict["Real"].append(np.array([img, label], dtype=object))
+    np.savez_compressed(f"{DATASET_DIR}/Real/data2.npz", result_dict["Real"])
