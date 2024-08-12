@@ -188,7 +188,10 @@ def find_fingerprint(data):
 
 def delete_fingerprint(data):
     print("delete_fingerprint", data)
-    id = data["id"]
+    # id = data["id"]
+    name = data["name"]
+    found_database = [f for f in fingerprint_database if f["name"] == name]
+    id = found_database[0]["id"]
     found = [f for f in fingerprints if f[0][0] == id]
     if len(found) == 0:
         return f"No fingerprint found with id: {id}"
