@@ -1,1 +1,1 @@
-nodemon src/server.py --exec "python src/server.py"
+nodemon src/server.py --watch src/ --exec "python src/server.py"
