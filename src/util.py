@@ -36,6 +36,7 @@ def extract_label(img_path):
 
 
 def format_image_prediction(img):
+    img = resize_and_pad_image(img, (90, 90))
     return img.reshape((1, 90, 90, 1)).astype(np.float32) / 255.0
 
 
