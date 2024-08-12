@@ -11,12 +11,14 @@ from util import (
     combine_label,
     format_image_prediction,
     resize_and_pad_image,
+    scale_image,
 )
 import os
 import tensorflow as tf
 import traceback
 import matplotlib.pyplot as plt
 import fingerprint_enhancer
+import json
 
 PORT = 8000
 
@@ -25,6 +27,7 @@ PROJECT_DIR = resolve(
 )  # up one level from src
 print("PROJECT_DIR", PROJECT_DIR)  # must the root of the project
 
+fingerprints = []
 fingerprint_database = []
 current_id = 0
 model = None
@@ -38,37 +41,55 @@ def get_id():
 
 def init_database():
     global current_id
+    global fingerprint_database
+
     fingerprint_paths = sorted(resolve("database/fingerprints").glob("*.bmp"))
+    fingerprint_database = json.load(
+        open(resolve(PROJECT_DIR, "database/database.json"))
+    )
+
     for i, path in enumerate(fingerprint_paths):
         filename = path.stem
         img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        # img = fingerprint_enhancer.enhance_Fingerprint(img)
-        # img = cv2.bitwise_not(img)
-        img = Gabor(img)
-        # img = cv2.resize(img, (90, 90))
         img = format_image_prediction(img)
-
-        # img = cv2.resize(img, (103, 96))
-        # img = fingerprint_enhancer.enhance_Fingerprint(img)
-        # img = cv2.bitwise_not(img)
-        # img = resize_and_pad_image(img, (90, 90))
-        # img[img > 150] = 255
-        # img[img < 150] = 0
-
         label = extract_label(filename)
-        fingerprint_database.append((label, img))
+        fingerprints.append((label, img))
         current_id = max(current_id, label[0])
     print(
-        f"Database initialized with {len(fingerprint_database)} fingerprints, next id: {current_id + 1}"
+        f"Database initialized with {len(fingerprints)} fingerprints, next id: {current_id + 1}"
     )
+
+
+def process_image(img):
+    target_gabor_h = 400
+    print(img.shape, "scale", target_gabor_h / img.shape[0])
+    img = scale_image(img, target_gabor_h / img.shape[0])
+
+    if np.mean(img) > 200:
+        img = cv2.equalizeHist(img)
+        img = fingerprint_enhancer.enhance_Fingerprint(img)
+        img = cv2.bitwise_not(img)
+
+    img[img > 200] = 255
+    img[img < 100] = 0
+    return img
 
 
 def init_model():
     global model
-    MODEL_PATH = resolve(PROJECT_DIR, "result/finalized_model.h5")
+    MODEL_PATH = resolve(PROJECT_DIR, "result/finalized_model2.h5")
     model = tf.keras.models.load_model(MODEL_PATH)
     model.summary()
     print(f"Model loaded from {MODEL_PATH}")
+
+
+def save_database():
+    json.dump(
+        fingerprint_database,
+        open(resolve(PROJECT_DIR, "database/database.json"), "w", encoding="utf-8"),
+        indent=4,
+    )
+    print("Database saved")
 
 
 init_database()
@@ -84,19 +105,30 @@ def base64_to_image(base64_str):
 
 
 def register_fingerprint(data):
+    for it in fingerprint_database:
+        if it["name"] == data["name"]:
+            return f"Name {data['name']} already registered!"
+
     img = base64_to_image(data["fingerprint"])
     id = get_id()
     label_text = combine_label((id, data["gender"], data["lr"], data["finger"]))
+    img = process_image(img)
     cv2.imwrite(resolve(PROJECT_DIR, "database/fingerprints", f"{label_text}.bmp"), img)
+    fingerprints.append((extract_label(label_text), format_image_prediction(img)))
     fingerprint_database.append(
-        (extract_label(label_text), format_image_prediction(Gabor(img)))
+        {
+            "id": int(id),
+            "name": str(data["name"]),
+            "label": label_text,
+        }
     )
+    save_database()
     return f"register success with id: {id}"
 
 
 def compare_fingerprint(fingerprint1, fingerprint2, label2):
     pred = model.predict([fingerprint1, fingerprint2])
-    return round(np.max(pred), 5), label2
+    return float(np.max(pred)), label2
 
 
 def test(img):
@@ -125,26 +157,15 @@ def test(img):
 
 def find_fingerprint(data):
     img = base64_to_image(data["fingerprint"])
-    test(img)
-    # img = Gabor(img)
-    # img = format_image_prediction(img)
-    # img = fingerprint_enhancer.enhance_Fingerprint(img)
-    # img = cv2.bitwise_not(img)
-    # img = resize_and_pad_image(img, (90, 90))
-    # img[img > 150] = 255
-    # img[img < 150] = 0
-    # # img = cv2.resize(img, (90, 90))
-    # img = format_image_prediction(img)
+    img = process_image(img)
+    img = format_image_prediction(img)
 
-    plt.figure(figsize=(16, 8))
-    plt.title("Input: ")
-    plt.imshow(img.squeeze(), cmap="gray")
-    plt.waitforbuttonpress()
+    print(img.shape)
 
     best_score = 0
     id_match = 0
 
-    for label, fingerprint in fingerprint_database:
+    for label, fingerprint in fingerprints:
         score, lbl = compare_fingerprint(img, fingerprint, label)
         if score > best_score:
             best_score = score
@@ -159,7 +180,8 @@ def find_fingerprint(data):
 
     return {
         "id": int(id_match),
-        "score": int(best_score * 10**5),
+        "name": [f["name"] for f in fingerprint_database if f["id"] == id_match][0],
+        "score": best_score,
         "label": combine_label((id_match, label[1], label[2], label[3])),
     }
 
@@ -167,15 +189,17 @@ def find_fingerprint(data):
 def delete_fingerprint(data):
     print("delete_fingerprint", data)
     id = data["id"]
-    found = [f for f in fingerprint_database if f[0][0] == id]
+    found = [f for f in fingerprints if f[0][0] == id]
     if len(found) == 0:
         return f"No fingerprint found with id: {id}"
-    fingerprint_database[:] = [f for f in fingerprint_database if f[0][0] != id]
+    fingerprints[:] = [f for f in fingerprints if f[0][0] != id]
+    fingerprint_database[:] = [f for f in fingerprint_database if f["id"] != id]
     os.remove(
         resolve(
             PROJECT_DIR, "database/fingerprints", f"{combine_label(found[0][0])}.bmp"
         )
     )
+    save_database()
     return f"Delete success with id: {id}"
 
 
@@ -218,6 +242,17 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             traceback.print_exc()
             self.response(200, None, repr(e))
+
+    def do_GET(self):
+        if self.path == "/":
+            print(fingerprint_database)
+            self.response(200, fingerprint_database)
+
+        else:
+            self.send_response(404)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
     def response(self, code, data, message=""):
         response = Response(code, data, message)
