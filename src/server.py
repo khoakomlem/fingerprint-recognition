@@ -232,6 +232,7 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     #     self.response(200)
 
     def do_POST(self):
+        self.end_headers()
         data = self.parse_body()
         try:
             if self.path == "/register":
@@ -244,9 +245,10 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.response(404, None, "Not Found")
         except Exception as e:
             traceback.print_exc()
-            self.response(200, None, repr(e))
+            self.response(500, None, repr(e))
 
     def do_GET(self):
+        self.end_headers()
         if self.path == "/":
             print(fingerprint_database)
             self.response(200, fingerprint_database)
@@ -278,6 +280,12 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             key, value = item.split("=")
             form_data[key] = value
         return form_data
+
+    def end_headers(self):
+        # Add the required CORS headers
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 
 with socketserver.TCPServer(("", PORT), SimpleHTTPRequestHandler) as httpd:
