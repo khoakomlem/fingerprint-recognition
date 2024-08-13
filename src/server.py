@@ -36,7 +36,7 @@ model = None
 def get_id():
     global current_id
     current_id += 1
-    return current_id
+    return int(current_id)
 
 
 def init_database():
