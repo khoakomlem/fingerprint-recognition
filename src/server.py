@@ -228,9 +228,6 @@ class Response:
 
 
 class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    # def do_GET(self):
-    #     self.response(200)
-
     def do_POST(self):
         data = self.parse_body()
         try:
@@ -280,10 +277,17 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         return form_data
 
     def end_headers(self):
-        # Add the required CORS headers
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "x-api-key, Content-Type")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(200, "ok")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "x-api-key, Content-Type")
+        self.end_headers()
 
 
 with socketserver.TCPServer(("", PORT), SimpleHTTPRequestHandler) as httpd:
