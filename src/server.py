@@ -113,7 +113,9 @@ def register_fingerprint(data):
     id = get_id()
     label_text = combine_label((id, data["gender"], data["lr"], data["finger"]))
     img = process_image(img)
-    cv2.imwrite(resolve(PROJECT_DIR, "database/fingerprints", f"{label_text}.bmp"), img)
+    path = "database/fingerprints/" + f"{label_text}.bmp"
+    print("Saving fingerprint to", path)
+    cv2.imwrite(path, img)
     fingerprints.append((extract_label(label_text), format_image_prediction(img)))
     fingerprint_database.append(
         {
