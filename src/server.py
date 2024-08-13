@@ -232,7 +232,6 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     #     self.response(200)
 
     def do_POST(self):
-        self.end_headers()
         data = self.parse_body()
         try:
             if self.path == "/register":
@@ -248,7 +247,6 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.response(500, None, repr(e))
 
     def do_GET(self):
-        self.end_headers()
         if self.path == "/":
             print(fingerprint_database)
             self.response(200, fingerprint_database)
