@@ -61,7 +61,7 @@ def init_database():
 
 
 def process_image(img):
-    target_gabor_h = 400
+    target_gabor_h = 1000
     print(img.shape, "scale", target_gabor_h / img.shape[0])
     img = scale_image(img, target_gabor_h / img.shape[0])
 
@@ -77,7 +77,7 @@ def process_image(img):
 
 def init_model():
     global model
-    MODEL_PATH = resolve(PROJECT_DIR, "result/finalized_model2.h5")
+    MODEL_PATH = resolve(PROJECT_DIR, "result/finalized_model22.h5")
     model = tf.keras.models.load_model(MODEL_PATH)
     model.summary()
     print(f"Model loaded from {MODEL_PATH}")
