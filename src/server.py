@@ -65,10 +65,10 @@ def process_image(img):
     print(img.shape, "scale", target_gabor_h / img.shape[0])
     img = scale_image(img, target_gabor_h / img.shape[0])
 
-    if np.mean(img) > 200:
-        img = cv2.equalizeHist(img)
-        img = fingerprint_enhancer.enhance_Fingerprint(img)
-        img = cv2.bitwise_not(img)
+    # if np.mean(img) > 200:
+    img = cv2.equalizeHist(img)
+    img = fingerprint_enhancer.enhance_Fingerprint(img)
+    img = cv2.bitwise_not(img)
 
     img[img > 200] = 255
     img[img < 100] = 0
