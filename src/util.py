@@ -7,7 +7,7 @@ import fingerprint_enhancer
 
 
 def resolve(*args):
-    return pathlib.Path(os.path.join(*args)).resolve()
+    return str(pathlib.Path(os.path.join(*args)).resolve())
 
 
 def extract_label(img_path):
