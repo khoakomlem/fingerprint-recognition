@@ -2,3 +2,6 @@
 dataset-raw/
 dataset-enhanced/
 dataset-original/
+
+database/fingerprints/
+!database/fingerprints/.gitkeep
