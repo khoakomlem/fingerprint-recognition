@@ -1,7 +1,17 @@
 [
     {
-        "id": 29,
-        "name": "Khoa Bean 1524",
-        "label": "29__F_Right_index_finger"
+        "id": 4,
+        "name": "Nguyen Khac Tung Duong",
+        "label": "4__F_Right_index_finger"
+    },
+    {
+        "id": 5,
+        "name": "Dau Van Dang Khoa",
+        "label": "5__F_Right_index_finger"
+    },
+    {
+        "id": 6,
+        "name": "Nguyen Thanh Khai",
+        "label": "6__F_Right_index_finger"
     }
 ]

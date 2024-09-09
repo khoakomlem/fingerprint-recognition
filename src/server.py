@@ -61,7 +61,7 @@ def init_database():
 
 
 def process_image(img):
-    target_gabor_h = 1000
+    target_gabor_h = 300
     print(img.shape, "scale", target_gabor_h / img.shape[0])
     img = scale_image(img, target_gabor_h / img.shape[0])
 
