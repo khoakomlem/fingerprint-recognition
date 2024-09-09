@@ -22,42 +22,56 @@ import json
 
 PORT = 8000
 
+# Project directory
 PROJECT_DIR = resolve(
     os.path.dirname(os.path.realpath(__file__)), ".."
 )  # up one level from src
 print("PROJECT_DIR", PROJECT_DIR)  # must the root of the project
 
-fingerprints = []
-fingerprint_database = []
+
+# Class house
+class House:
+    def __init__(self, id: str, name: str, fingerprints: list[np.ndarray]):
+        self.id = id
+        self.name = name
+        self.fingerprints = fingerprints
+
+
+# Generate i
 current_id = 0
-model = None
 
 
 def get_id():
     global current_id
     current_id += 1
-    return int(current_id)
+    return str(current_id)
 
 
+model = None
+house_map: dict[str, House] = {}
+
+
+# Init database
 def init_database():
     global current_id
-    global fingerprint_database
+    json_database = json.load(open(resolve(PROJECT_DIR, "database/database.json")))
+    house_map.clear()
+    for json_house in json_database:
+        house_map[json_house["id"]] = House(json_house["id"], json_house["name"], [])
+        house_map[json_house["id"]].fingerprints = [
+            cv2.imread(
+                str(resolve(PROJECT_DIR, "database/fingerprints", filename)),
+                cv2.IMREAD_GRAYSCALE,
+            )
+            for i, filename in enumerate(json_house["fingerprints"])
+        ]
+        house_map[json_house["id"]].fingerprints = [
+            format_image_prediction(fingerprint)
+            for fingerprint in house_map[json_house["id"]].fingerprints
+        ]
+        current_id = max(current_id, int(json_house["id"]))
 
-    fingerprint_paths = sorted(resolve("database/fingerprints").glob("*.bmp"))
-    fingerprint_database = json.load(
-        open(resolve(PROJECT_DIR, "database/database.json"))
-    )
-
-    for i, path in enumerate(fingerprint_paths):
-        filename = path.stem
-        img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-        img = format_image_prediction(img)
-        label = extract_label(filename)
-        fingerprints.append((label, img))
-        current_id = max(current_id, label[0])
-    print(
-        f"Database initialized with {len(fingerprints)} fingerprints, next id: {current_id + 1}"
-    )
+    print(f"Database initialized!")
 
 
 def process_image(img):
@@ -83,9 +97,25 @@ def init_model():
     print(f"Model loaded from {MODEL_PATH}")
 
 
+def serialize_database() -> list[dict]:
+    json_database = []
+    for house in house_map.values():
+        json_database.append(
+            {
+                "id": house.id,
+                "name": house.name,
+                "fingerprints": [
+                    f"{house.id}-{i}.bmp" for i in range(len(house.fingerprints))
+                ],
+            }
+        )
+    return json_database
+
+
 def save_database():
+    json_database = serialize_database()
     json.dump(
-        fingerprint_database,
+        json_database,
         open(resolve(PROJECT_DIR, "database/database.json"), "w", encoding="utf-8"),
         indent=4,
     )
@@ -105,32 +135,28 @@ def base64_to_image(base64_str):
 
 
 def register_fingerprint(data):
-    for it in fingerprint_database:
-        if it["name"] == data["name"]:
-            return f"Name {data['name']} already registered!"
-
-    img = base64_to_image(data["fingerprint"])
+    name, fingerprints = data["name"], data["fingerprints"]
     id = get_id()
-    label_text = combine_label((id, data["gender"], data["lr"], data["finger"]))
-    img = process_image(img)
-    path = "database/fingerprints/" + f"{label_text}.bmp"
-    print("Saving fingerprint to", path)
-    cv2.imwrite(path, img)
-    fingerprints.append((extract_label(label_text), format_image_prediction(img)))
-    fingerprint_database.append(
-        {
-            "id": int(id),
-            "name": str(data["name"]),
-            "label": label_text,
-        }
-    )
+    imgs = []
+    for fingerprint in fingerprints:
+        img = base64_to_image(fingerprint)
+        img = process_image(img)
+        filename = f"{id}-{len(imgs)}.bmp"
+        cv2.imwrite(resolve(PROJECT_DIR, "database/fingerprints", filename), img)
+        img = format_image_prediction(img)
+        imgs.append(img)
+    house_map[id] = House(id, name, imgs)
     save_database()
-    return f"register success with id: {id}"
+    return {
+        "id": id,
+        "name": name,
+        "fingerprints": [f"{id}-{i}.bmp" for i in range(len(imgs))],
+    }
 
 
-def compare_fingerprint(fingerprint1, fingerprint2, label2):
+def compare_fingerprint(fingerprint1, fingerprint2) -> float:
     pred = model.predict([fingerprint1, fingerprint2])
-    return float(np.max(pred)), label2
+    return float(np.max(pred))
 
 
 def test(img):
@@ -162,48 +188,46 @@ def find_fingerprint(data):
     img = process_image(img)
     img = format_image_prediction(img)
 
-    print(img.shape)
-
     best_score = 0
-    id_match = 0
+    id_match = "0"
+    filename_match = "unknown.bmp"
 
-    for label, fingerprint in fingerprints:
-        score, lbl = compare_fingerprint(img, fingerprint, label)
-        if score > best_score:
-            best_score = score
-            id_match = lbl[0]
+    for house in house_map.values():
+        for i, fingerprint in enumerate(house.fingerprints):
+            score = compare_fingerprint(img, fingerprint)
+            if score > best_score:
+                best_score = score
+                id_match = house.id
+                filename_match = f"{id_match}-{i}.bmp"
 
-    if id_match == 0:
+    if id_match == "0":
         return {
-            "id": 0,
+            "id": id_match,
             "score": 0,
-            "label": "Unknown",
+            "name": "Unknown",
+            "filename": filename_match,
         }
 
     return {
-        "id": int(id_match),
-        "name": [f["name"] for f in fingerprint_database if f["id"] == id_match][0],
+        "id": id_match,
         "score": best_score,
-        "label": combine_label((id_match, label[1], label[2], label[3])),
+        "name": house_map[id_match].name,
+        "filename": filename_match,
     }
 
 
 def delete_fingerprint(data):
     print("delete_fingerprint", data)
-    # id = data["id"]
-    name = data["name"]
-    found_database = [f for f in fingerprint_database if f["name"] == name]
-    id = found_database[0]["id"]
-    found = [f for f in fingerprints if f[0][0] == id]
+    id = data["id"]
+    found = [(k, v) for k, v in house_map.items() if k == id]
     if len(found) == 0:
-        return f"No fingerprint found with id: {id}"
-    fingerprints[:] = [f for f in fingerprints if f[0][0] != id]
-    fingerprint_database[:] = [f for f in fingerprint_database if f["id"] != id]
-    os.remove(
-        resolve(
-            PROJECT_DIR, "database/fingerprints", f"{combine_label(found[0][0])}.bmp"
-        )
-    )
+        return f"House with id: {id} not found"
+    house = found[0][1]
+
+    for i, fingerprint in enumerate(house.fingerprints):
+        os.remove(resolve(PROJECT_DIR, "database/fingerprints", f"{id}-{i}.bmp"))
+    del house_map[id]
+
     save_database()
     return f"Delete success with id: {id}"
 
@@ -247,8 +271,8 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            print(fingerprint_database)
-            self.response(200, fingerprint_database)
+            print(serialize_database())
+            self.response(200, serialize_database())
 
         else:
             self.send_response(404)
