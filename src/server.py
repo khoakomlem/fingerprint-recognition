@@ -5,12 +5,8 @@ import numpy as np
 import cv2
 import base64
 from util import (
-    Gabor,
     resolve,
-    extract_label,
-    combine_label,
     format_image_prediction,
-    resize_and_pad_image,
     scale_image,
 )
 import os
@@ -19,8 +15,12 @@ import traceback
 import matplotlib.pyplot as plt
 import fingerprint_enhancer
 import json
+from uuid import uuid4
+from glob import glob
 
 PORT = 8000
+MIN_SCORE = 0.94
+DEFAULT_MODEL = "gabor15epochs"
 
 # Project directory
 PROJECT_DIR = resolve(
@@ -31,45 +31,37 @@ print("PROJECT_DIR", PROJECT_DIR)  # must the root of the project
 
 # Class house
 class House:
-    def __init__(self, id: str, name: str, fingerprints: list[np.ndarray]):
+    def __init__(self, id: str, name: str, fingerprint_ids: list[str]):
         self.id = id
         self.name = name
-        self.fingerprints = fingerprints
-
-
-# Generate i
-current_id = 0
+        self.fingerprint_ids = fingerprint_ids
 
 
 def get_id():
-    global current_id
-    current_id += 1
-    return str(current_id)
+    return uuid4().hex
 
 
-model = None
+MODELS = glob(resolve(PROJECT_DIR, "database/models/*.h5"))
+
+model_map: dict[str, tf.keras.Model] = {}
 house_map: dict[str, House] = {}
+fingerprint_map: dict[str, np.ndarray] = {}
 
 
 # Init database
 def init_database():
-    global current_id
     json_database = json.load(open(resolve(PROJECT_DIR, "database/database.json")))
     house_map.clear()
     for json_house in json_database:
         house_map[json_house["id"]] = House(json_house["id"], json_house["name"], [])
-        house_map[json_house["id"]].fingerprints = [
-            cv2.imread(
-                str(resolve(PROJECT_DIR, "database/fingerprints", filename)),
+        house_map[json_house["id"]].fingerprint_ids = json_house["fingerprint_ids"]
+        for fingerprint_id in json_house["fingerprint_ids"]:
+            img = cv2.imread(
+                resolve(PROJECT_DIR, "database/fingerprints", f"{fingerprint_id}.bmp"),
                 cv2.IMREAD_GRAYSCALE,
             )
-            for i, filename in enumerate(json_house["fingerprints"])
-        ]
-        house_map[json_house["id"]].fingerprints = [
-            format_image_prediction(fingerprint)
-            for fingerprint in house_map[json_house["id"]].fingerprints
-        ]
-        current_id = max(current_id, int(json_house["id"]))
+            img = format_image_prediction(img)
+            fingerprint_map[fingerprint_id] = img
 
     print(f"Database initialized!")
 
@@ -90,11 +82,11 @@ def process_image(img):
 
 
 def init_model():
-    global model
-    MODEL_PATH = resolve(PROJECT_DIR, "result/finalized_model22.h5")
-    model = tf.keras.models.load_model(MODEL_PATH)
-    model.summary()
-    print(f"Model loaded from {MODEL_PATH}")
+    for model_path in MODELS:
+        model = tf.keras.models.load_model(model_path)
+        modelname = os.path.basename(model_path).split(".")[0]
+        model_map[modelname] = model
+        print(f"Model loaded from {model_path} with name {modelname}")
 
 
 def serialize_database() -> list[dict]:
@@ -104,9 +96,7 @@ def serialize_database() -> list[dict]:
             {
                 "id": house.id,
                 "name": house.name,
-                "fingerprints": [
-                    f"{house.id}-{i}.bmp" for i in range(len(house.fingerprints))
-                ],
+                "fingerprint_ids": house.fingerprint_ids,
             }
         )
     return json_database
@@ -130,106 +120,155 @@ def base64_to_image(base64_str):
     image_data = base64.b64decode(base64_str)
     np_arr = np.frombuffer(image_data, np.uint8)
     img = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
-
     return img
 
 
-def register_fingerprint(data):
+def is_unique_fingerprint(fingerprint):
+    img = format_image_prediction(fingerprint)
+    for fingerprint_id in fingerprint_map.keys():
+        if (
+            compare_fingerprint(
+                model_map[DEFAULT_MODEL], img, fingerprint_map[fingerprint_id]
+            )
+            > MIN_SCORE
+        ):
+            return False
+    return True
+
+
+def register_house(data):
     name, fingerprints = data["name"], data["fingerprints"]
-    id = get_id()
+    fingerprint_ids = []
     imgs = []
     for fingerprint in fingerprints:
         img = base64_to_image(fingerprint)
         img = process_image(img)
-        filename = f"{id}-{len(imgs)}.bmp"
+        if not is_unique_fingerprint(img):
+            raise Exception("Fingerprint already exists")
+        imgs.append(img)
+
+    for i, img in enumerate(imgs):
+        id = get_id()
+        filename = f"{id}.bmp"
         cv2.imwrite(resolve(PROJECT_DIR, "database/fingerprints", filename), img)
         img = format_image_prediction(img)
-        imgs.append(img)
-    house_map[id] = House(id, name, imgs)
+        fingerprint_map[id] = img
+        fingerprint_ids.append(id)
+
+    house_map[id] = House(id, name, fingerprint_ids)
     save_database()
     return {
         "id": id,
         "name": name,
-        "fingerprints": [f"{id}-{i}.bmp" for i in range(len(imgs))],
+        "fingerprint_ids": fingerprint_ids,
     }
 
 
-def compare_fingerprint(fingerprint1, fingerprint2) -> float:
+def compare_fingerprint(
+    model: tf.keras.Model, fingerprint1: np.ndarray, fingerprint2: np.ndarray
+) -> float:
     pred = model.predict([fingerprint1, fingerprint2])
     return float(np.max(pred))
 
 
-def test(img):
-    plt.figure(figsize=(16, 8))
-    plt.subplot(2, 1, 1)
-    plt.title("Input: ")
-    plt.imshow(img.squeeze(), cmap="gray")
-    img = cv2.resize(img, (2 * 96, 2 * 103))
-    if np.mean(img) > 200:
-        img = cv2.equalizeHist(img)
-    img = cv2.resize(img, (2 * 96, 2 * 103))
-    img = fingerprint_enhancer.enhance_Fingerprint(img)
-    img = cv2.bitwise_not(img)
-    img = resize_and_pad_image(img, (90, 90))
-
-    # plt.figure(figsize=(16, 8))
-    # plt.subplot(2, 1, 1)
-    # plt.title("Input: ")
-    # plt.imshow(img.squeeze(), cmap="gray")
-    img[img > 200] = 255
-    img[img < 100] = 0
-    plt.subplot(2, 1, 2)
-    plt.imshow(img.squeeze(), cmap="gray")
-    plt.waitforbuttonpress()
-
-
 def find_fingerprint(data):
     img = base64_to_image(data["fingerprint"])
+    modelname = data["model"]
     img = process_image(img)
     img = format_image_prediction(img)
 
-    best_score = 0
+    best_score: float = 0
     id_match = "0"
-    filename_match = "unknown.bmp"
+    fingerprint_match = "unknown"
 
     for house in house_map.values():
-        for i, fingerprint in enumerate(house.fingerprints):
-            score = compare_fingerprint(img, fingerprint)
+        for i, fingerprint_id in enumerate(house.fingerprint_ids):
+            score = compare_fingerprint(
+                model_map[modelname], img, fingerprint_map[fingerprint_id]
+            )
             if score > best_score:
                 best_score = score
                 id_match = house.id
-                filename_match = f"{id_match}-{i}.bmp"
+                fingerprint_match = fingerprint_id
 
     if id_match == "0":
         return {
             "id": id_match,
             "score": 0,
             "name": "Unknown",
-            "filename": filename_match,
+            "fingerprint_id": fingerprint_match,
         }
 
     return {
         "id": id_match,
         "score": best_score,
         "name": house_map[id_match].name,
-        "filename": filename_match,
+        "fingerprint_id": fingerprint_match,
     }
 
 
-def delete_fingerprint(data):
-    print("delete_fingerprint", data)
+def delete_house(data):
+    print("delete_house", data)
     id = data["id"]
     found = [(k, v) for k, v in house_map.items() if k == id]
     if len(found) == 0:
         return f"House with id: {id} not found"
     house = found[0][1]
 
-    for i, fingerprint in enumerate(house.fingerprints):
-        os.remove(resolve(PROJECT_DIR, "database/fingerprints", f"{id}-{i}.bmp"))
-    del house_map[id]
+    for i, fingerprint in enumerate(house.fingerprint_ids):
+        fingerprint_map.pop(fingerprint)
+        os.remove(resolve(PROJECT_DIR, "database/fingerprints", f"{fingerprint}.bmp"))
+    house_map.pop(id)
 
     save_database()
     return f"Delete success with id: {id}"
+
+
+def update_house(data):
+    print("update_house", data)
+    id, name, fingerprints = data["id"], data["name"], data["fingerprints"]
+
+    if id not in house_map:
+        return f"House with id: {id} not found"
+    house = house_map[id]
+
+    # remove old fingerprints
+    for fingerprint_id in house.fingerprint_ids:
+        os.remove(
+            resolve(PROJECT_DIR, "database/fingerprints", f"{fingerprint_id}.bmp")
+        )
+        fingerprint_map.pop(fingerprint_id)
+
+    house.name = name
+    house.fingerprint_ids = []
+
+    for fingerprint in fingerprints:
+        id = get_id()
+        img = base64_to_image(fingerprint)
+        img = process_image(img)
+        filename = f"{id}.bmp"
+        cv2.imwrite(resolve(PROJECT_DIR, "database/fingerprints", filename), img)
+        img = format_image_prediction(img)
+        fingerprint_map[id] = img
+        house.fingerprint_ids.append(id)
+
+    save_database()
+    return {
+        "id": id,
+        "name": name,
+        "fingerprint_ids": house.fingerprint_ids,
+    }
+
+
+def get_fingerprint(data):
+    print("get_fingerprint", data)
+    fingerprint_id = data["fingerprint_id"]
+    img = cv2.imread(
+        resolve(PROJECT_DIR, "database/fingerprints", f"{fingerprint_id}.bmp"),
+        cv2.IMREAD_GRAYSCALE,
+    )
+    _, buffer = cv2.imencode(".bmp", img)
+    return base64.b64encode(buffer).decode("utf-8")
 
 
 class Response:
@@ -258,11 +297,13 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         data = self.parse_body()
         try:
             if self.path == "/register":
-                self.response(200, register_fingerprint(data))
+                self.response(200, register_house(data))
             elif self.path == "/find":
                 self.response(200, find_fingerprint(data))
             elif self.path == "/delete":
-                self.response(200, delete_fingerprint(data))
+                self.response(200, delete_house(data))
+            elif self.path == "/update":
+                self.response(200, update_house(data))
             else:
                 self.response(404, None, "Not Found")
         except Exception as e:
@@ -271,9 +312,13 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            print(serialize_database())
             self.response(200, serialize_database())
-
+        elif self.path == "/models":
+            modelnames = [os.path.basename(model).split(".")[0] for model in MODELS]
+            self.response(200, modelnames)
+        elif self.path.startswith("/fingerprint"):
+            # print(self.parse_formdata())
+            self.response(200, get_fingerprint(self.parse_query()))
         else:
             self.send_response(404)
             self.send_header("Content-type", "text/html")
@@ -295,9 +340,9 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         except:
             return {}
 
-    def parse_formdata(self):
+    def parse_query(self):
         form_data = {}
-        for item in self.rfile.read().decode("utf-8").split("&"):
+        for item in self.path.split("?")[1].split("&"):
             key, value = item.split("=")
             form_data[key] = value
         return form_data
