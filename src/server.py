@@ -41,7 +41,8 @@ def get_id():
     return uuid4().hex
 
 
-MODELS = glob(resolve(PROJECT_DIR, "database/models/*.h5"))
+MODELPATHS = glob(resolve(PROJECT_DIR, "database/models/*.h5"))
+FILTERS = ["none", "gabor"]
 
 model_map: dict[str, tf.keras.Model] = {}
 house_map: dict[str, House] = {}
@@ -82,7 +83,7 @@ def process_image(img):
 
 
 def init_model():
-    for model_path in MODELS:
+    for model_path in MODELPATHS:
         model = tf.keras.models.load_model(model_path)
         modelname = os.path.basename(model_path).split(".")[0]
         model_map[modelname] = model
@@ -123,12 +124,12 @@ def base64_to_image(base64_str):
     return img
 
 
-def is_unique_fingerprint(fingerprint):
+def is_unique_fingerprint(modelname: str, fingerprint: np.ndarray) -> bool:
     img = format_image_prediction(fingerprint)
     for fingerprint_id in fingerprint_map.keys():
         if (
             compare_fingerprint(
-                model_map[DEFAULT_MODEL], img, fingerprint_map[fingerprint_id]
+                model_map[modelname], img, fingerprint_map[fingerprint_id]
             )
             > MIN_SCORE
         ):
@@ -137,13 +138,19 @@ def is_unique_fingerprint(fingerprint):
 
 
 def register_house(data):
-    name, fingerprints = data["name"], data["fingerprints"]
+    (name, fingerprints, modelname, filtername) = (
+        data["name"],
+        data["fingerprints"],
+        data["model"],
+        data["filter"],
+    )
     fingerprint_ids = []
     imgs = []
     for fingerprint in fingerprints:
         img = base64_to_image(fingerprint)
-        img = process_image(img)
-        if not is_unique_fingerprint(img):
+        if filtername == "gabor":
+            img = process_image(img)
+        if not is_unique_fingerprint(modelname, img):
             raise Exception("Fingerprint already exists")
         imgs.append(img)
 
@@ -172,9 +179,13 @@ def compare_fingerprint(
 
 
 def find_fingerprint(data):
-    img = base64_to_image(data["fingerprint"])
-    modelname = data["model"]
-    img = process_image(img)
+    img, modelname, filtername = (
+        base64_to_image(data["fingerprint"]),
+        data["model"],
+        data["filter"],
+    )
+    if filtername == "gabor":
+        img = process_image(img)
     img = format_image_prediction(img)
 
     best_score: float = 0
@@ -314,7 +325,7 @@ class SimpleHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/":
             self.response(200, serialize_database())
         elif self.path == "/models":
-            modelnames = [os.path.basename(model).split(".")[0] for model in MODELS]
+            modelnames = [os.path.basename(model).split(".")[0] for model in MODELPATHS]
             self.response(200, modelnames)
         elif self.path.startswith("/fingerprint"):
             # print(self.parse_formdata())
