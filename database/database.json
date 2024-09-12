@@ -1,1 +1,21 @@
-[]
+[
+    {
+        "id": "12717a9c585f4214b653c8f2a0dda6ce",
+        "name": "Happy house 99855",
+        "fingerprint_ids": [
+            "5e64f55d517f40d4b4605bde550b09a2",
+            "0ab836fd92334d298df9315631d7659b",
+            "3d19a4e6a4aa4672a067261aa2e3cc27",
+            "89d9b6da9831402b8b2bbf58815464a4"
+        ]
+    },
+    {
+        "id": "46ff12dcce344b2bb9c7297111406cb7",
+        "name": "Happy house 13069",
+        "fingerprint_ids": [
+            "8aef50892bab4a11b6e132ee3fedd539",
+            "a274fd832ccf41279d9618c6eb0e3a8b",
+            "43a4eb3eb919469abfd78b493cc59fc1"
+        ]
+    }
+]
