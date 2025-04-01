@@ -1,5 +1,7 @@
 # Fingerprint Recognition Server
 
+UI base: <https://github.com/khoakomlem/fingerprint-recognition-ui>
+
 A Python-based HTTP server that provides fingerprint recognition and management capabilities. This server allows you to register, compare, and manage fingerprint data for different houses using deep learning models.
 
 ## Features
