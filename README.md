@@ -50,15 +50,19 @@ A Python-based HTTP server that provides fingerprint recognition and management 
 - `/get_fingerprint`: Retrieve fingerprint data for a specific ID
 
 ## Usage
+1. Init shell:
+```bash
+pipenv shell
+```
 
-1. Start the server:
+2. Start the server:
 ```bash
 python src/server.py
 ```
 
-2. The server will run on port 8000 by default.
+3. The server will run on port 8000 by default.
 
-3. Send HTTP requests to the appropriate endpoints with the required data in JSON format.
+4. Send HTTP requests to the appropriate endpoints with the required data in JSON format.
 
 ## Database Structure
 
